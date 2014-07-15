@@ -17,9 +17,11 @@
 # For some reason I can’t make AtomicParsley include the exact artwork from the FLAC file.
 # It insists on resizing it. Will live with that for now.
 
-function _flac2alac {
+# Parameters to this function are the input filename and the output directory
+function _flac2alac_file {
   tmpdir="/Volumes/RAM Disk"
   dir="`dirname \"$1\"`"
+  outputdir="$2"
   basename="`basename \"$1\" .flac`"
 
   if [ ! -d "$tmpdir" ]; then
@@ -33,8 +35,8 @@ function _flac2alac {
   rawfile="$tmpdir/$basename.raw"
   tmpalacfile="$tmpdir/$basename.tmp.m4a"
 
-  alacfile="$dir/$basename.m4a"
-  metafile="$dir/$basename.flacmeta"
+  alacfile="$outputdir/$basename.m4a"
+  metafile="$outputdir/$basename.flacmeta"
 
   # extract metadata. Persist this file so we can go back and tweak the tagging later
   # without keeping the entire flac file around
@@ -44,7 +46,8 @@ function _flac2alac {
 
   if [ -f "$alacfile" ]; then
     echo "ALAC file already exists: $alacfile"
-    rm -f "$1" # delete flac file
+#   keep flac file around
+#   rm -f "$1" # delete flac file
     return 0
   fi
 
@@ -91,7 +94,7 @@ function _flac2alac {
   DESCRIPTION="`cat \"$metafile\" | grep ^DESCRIPTION= | sed s/DESCRIPTION=//g`"
   COMPOSER="`cat \"$metafile\" | grep ^COMPOSER= | sed s/COMPOSER=//g`"
   TRACK_URI="`cat \"$metafile\" | grep ^.*TRACK_URI= | sed s/.*TRACK_URI=//g`"
-  ARTFILE="$dir/$basename.jpg"
+  ARTFILE="$outputdir/$basename.jpg"
 	
   metaflac --export-picture-to="$ARTFILE" "$1"
 
@@ -103,7 +106,7 @@ function _flac2alac {
     AtomicParsley "$tmpalacfile" --artist "$ARTIST" --title "$TITLE" --album "$ALBUM" --genre "$GENRE" --tracknum "$TRACKNUMBER" --disk "$DISCNUMBER" --comment "$TRACK_URI" --year "$DATE" --composer "$COMPOSER" --albumArtist "$ALBUMARTIST" --overWrite > /dev/null
   fi
 
-  rm -f "$dir"/*resized*.jpg
+  rm -f "$outputdir"/*resized*.jpg
 
   # recreate the raw file from the alac file to compare md5sums
   rm -f "$rawfile"
@@ -121,15 +124,32 @@ function _flac2alac {
   rm "$rawfile"
   mv "$tmpalacfile" "$alacfile"
   if [ -f "$tmpalacfile" ]; then rm "$tmpalacfile"; fi
-  if [ -f "$alacfile" ]; then rm "$1"; fi
+  
+# keep flac file around
+#if [ -f "$alacfile" ]; then rm "$1"; fi
 
   echo "Converted $1 to $alacfile"
   return 0
 }
 
+# Parameters to this function are the input dir and the output dir
+function _flac2alac_dir {
+  for file in `find "$1" -type f -mtime -7 -name \*.flac -maxdepth 1 -mindepth 1`; do
+    _flac2alac_file "$file" "$2"
+  done
+}
 
-for arg in "$@"; do
-  if [ -f "$arg" ]; then
-    _flac2alac "$arg"
-  fi
-done
+# Parameters to this function are the input dir and the output dir
+function _flac2alac_recursive_dir {
+  echo "Converting $1 to $2"
+  _flac2alac_dir "$1" "$2"
+  for relativedir in `(cd "$1" && find . -type d -mindepth 1 -maxdepth 1)`; do
+    _flac2alac_recursive_dir "$1/$relativedir" "$2/$relativedir";
+  done 
+
+}
+
+# usage: flac2alac input_dir output_dir
+_flac2alac_recursive_dir $1 $2
+
+
